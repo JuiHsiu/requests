@@ -87,6 +87,21 @@ except ImportError:
     _preloaded_ssl_context = None
 
 
+def _should_use_default_context(
+    verify: "bool | str | None",
+    client_cert: "typing.Tuple[str, str] | str | None",
+    poolmanager_kwargs: typing.Dict[str, typing.Any],
+) -> bool:
+    """Determine whether to use the module level SSLContext."""
+    has_poolmanager_ssl_context = poolmanager_kwargs.get("ssl_context")
+    return (
+        verify is True
+        and _preloaded_ssl_context is not None
+        and not has_poolmanager_ssl_context
+        and client_cert is None
+    )
+
+
 def _urllib3_request_context(
     request: "PreparedRequest",
     verify: "bool | str | None",
@@ -102,21 +117,30 @@ def _urllib3_request_context(
     # Determine if we have and should use our default SSLContext
     # to optimize performance on standard requests.
     poolmanager_kwargs = getattr(poolmanager, "connection_pool_kw", {})
-    has_poolmanager_ssl_context = poolmanager_kwargs.get("ssl_context")
-    should_use_default_ssl_context = (
-        _preloaded_ssl_context is not None and not has_poolmanager_ssl_context
-    )
 
     cert_reqs = "CERT_REQUIRED"
+    cert_loc: typing.Optional[str] = None
     if verify is False:
         cert_reqs = "CERT_NONE"
-    elif verify is True and should_use_default_ssl_context:
+    elif _should_use_default_context(verify, client_cert, poolmanager_kwargs):
         pool_kwargs["ssl_context"] = _preloaded_ssl_context
+    elif verify is True:
+        cert_loc = extract_zipped_paths(DEFAULT_CA_BUNDLE_PATH)
+        if cert_loc is None:
+            # Fall back to default CA bundle if extraction fails
+            warnings.warn(
+                "Failed to extract zipped paths for CA bundle; using default.",
+                RuntimeWarning,
+            )
+            cert_loc = DEFAULT_CA_BUNDLE_PATH
     elif isinstance(verify, str):
-        if not os.path.isdir(verify):
-            pool_kwargs["ca_certs"] = verify
+        cert_loc = verify
+
+    if cert_loc is not None:
+        if not os.path.isdir(cert_loc):
+            pool_kwargs["ca_certs"] = cert_loc
         else:
-            pool_kwargs["ca_cert_dir"] = verify
+            pool_kwargs["ca_cert_dir"] = cert_loc
     pool_kwargs["cert_reqs"] = cert_reqs
     if client_cert is not None:
         if isinstance(client_cert, tuple) and len(client_cert) == 2:
@@ -316,10 +340,8 @@ class HTTPAdapter(BaseAdapter):
         if url.lower().startswith("https") and verify:
             conn.cert_reqs = "CERT_REQUIRED"
 
-            # Only load the CA certificates if 'verify' is a string indicating the CA bundle to use.
-            # Otherwise, if verify is a boolean, we don't load anything since
-            # the connection will be using a context with the default certificates already loaded,
-            # and this avoids a call to the slow load_verify_locations()
+            # Only load the CA certificates if `verify` is a
+            # string indicating the CA bundle to use.
             if verify is not True:
                 # `verify` must be a str with a path then
                 cert_loc = verify
