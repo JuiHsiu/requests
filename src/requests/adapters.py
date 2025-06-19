@@ -126,6 +126,13 @@ def _urllib3_request_context(
         pool_kwargs["ssl_context"] = _preloaded_ssl_context
     elif verify is True:
         cert_loc = extract_zipped_paths(DEFAULT_CA_BUNDLE_PATH)
+        if cert_loc is None:
+            # Fall back to default CA bundle if extraction fails
+            warnings.warn(
+                "Failed to extract zipped paths for CA bundle; using default.",
+                RuntimeWarning,
+            )
+            cert_loc = DEFAULT_CA_BUNDLE_PATH
     elif isinstance(verify, str):
         cert_loc = verify
 
