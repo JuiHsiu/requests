@@ -732,24 +732,26 @@ def is_valid_cidr(string_network):
 
 @contextlib.contextmanager
 def set_environ(env_name, value):
-    """Set the environment variable 'env_name' to 'value'
+    """Temporarily set or remove an environment variable.
 
-    Save previous value, yield, and then restore the previous value stored in
-    the environment variable 'env_name'.
+    The variable is deleted while inside the context when ``value`` is ``None``.
+    Whatever existed beforehand is restored once the context exits.
+    """
 
-    If 'value' is None, do nothing"""
-    value_changed = value is not None
-    if value_changed:
-        old_value = os.environ.get(env_name)
-        os.environ[env_name] = value
+    old_exists = env_name in os.environ
+    old_value = os.environ.get(env_name)
+
     try:
+        if value is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = value
         yield
     finally:
-        if value_changed:
-            if old_value is None:
-                del os.environ[env_name]
-            else:
-                os.environ[env_name] = old_value
+        if old_exists:
+            os.environ[env_name] = old_value
+        else:
+            os.environ.pop(env_name, None)
 
 
 def should_bypass_proxies(url, no_proxy):
