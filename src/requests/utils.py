@@ -732,20 +732,20 @@ def is_valid_cidr(string_network):
 
 @contextlib.contextmanager
 def set_environ(env_name, value):
-    """Temporarily set or unset an environment variable.
+    """Temporarily set or remove an environment variable.
 
-    The previous value is restored after the context manager exits. If
-    ``value`` is ``None`` the variable will be removed within the context.
+    The variable is deleted while inside the context when ``value`` is ``None``.
+    Whatever existed beforehand is restored once the context exits.
     """
 
     old_exists = env_name in os.environ
     old_value = os.environ.get(env_name)
 
-    if value is None:
-        os.environ.pop(env_name, None)
-    else:
-        os.environ[env_name] = value
     try:
+        if value is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = value
         yield
     finally:
         if old_exists:
